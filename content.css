@@ -1,0 +1,37 @@
+:root {
+  --bili-focus-cover-top: 96px;
+  --bili-focus-cover-left: 80px;
+}
+
+#bili-focus-cover {
+  position: fixed;
+  top: var(--bili-focus-cover-top);
+  right: 0;
+  bottom: 0;
+  left: var(--bili-focus-cover-left);
+  z-index: 10000;
+  display: block;
+  background: #fff;
+  pointer-events: auto;
+}
+
+html.bili-focus-home-active body {
+  background: #fff !important;
+}
+
+html.bili-focus-home-active .feed-card,
+html.bili-focus-home-active .bili-video-card,
+html.bili-focus-home-active .bili-feed-card,
+html.bili-focus-home-active .recommended-container_floor-aside,
+html.bili-focus-home-active .recommended-swipe,
+html.bili-focus-home-active .recommend-list-v1,
+html.bili-focus-home-active .floor-single-card {
+  visibility: hidden !important;
+}
+
+@media (max-width: 900px) {
+  :root {
+    --bili-focus-cover-top: 88px;
+    --bili-focus-cover-left: 0px;
+  }
+}

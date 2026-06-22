@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "B站首页清屏",
+  "version": "1.0.0",
+  "description": "隐藏 B 站首页推荐流，保留搜索和常用入口。",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.bilibili.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.bilibili.com/*"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "B站首页清屏",
+    "default_popup": "popup.html"
+  }
+}
