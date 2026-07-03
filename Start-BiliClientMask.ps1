@@ -41,6 +41,8 @@ $VideoRecommendProbeStartTop = 300
 $VideoRecommendProbeBottomMargin = 160
 $VideoRecommendProbeIntervalMilliseconds = 800
 $LeftNavProbeIntervalMilliseconds = 500
+$SearchVisualProbeIntervalMilliseconds = 250
+$VideoPageVisualProbeIntervalMilliseconds = 250
 $HomeMaskColor = [System.Drawing.Color]::White
 $VideoRecommendMaskColor = [System.Drawing.Color]::FromArgb(22, 23, 25)
 $SearchStateHoldMilliseconds = 2000
@@ -206,6 +208,12 @@ $script:LastSearchProbeHandle = [IntPtr]::Zero
 $script:LastSearchProbeAt = [datetime]::MinValue
 $script:LastSearchActive = $false
 $script:LastSearchActiveConfirmedAt = [datetime]::MinValue
+$script:LastSearchVisualProbeKey = ""
+$script:LastSearchVisualProbeAt = [datetime]::MinValue
+$script:LastSearchVisualActive = $false
+$script:LastVideoPageVisualProbeKey = ""
+$script:LastVideoPageVisualProbeAt = [datetime]::MinValue
+$script:LastVideoPageVisualActive = $false
 $script:LastBilibiliWindowProbeAt = [datetime]::MinValue
 $script:LastBilibiliWindowExists = $false
 $script:BilibiliWindowProbeFound = $false
@@ -292,6 +300,97 @@ function Test-BilibiliPinkPixel {
     $Color.B -ge 100 -and
     $Color.B -le 200
   )
+}
+
+function Get-BitmapDarkRatio {
+  param(
+    [System.Drawing.Bitmap]$Bitmap,
+    [int]$Left,
+    [int]$Top,
+    [int]$Right,
+    [int]$Bottom
+  )
+
+  $darkCount = 0
+  $totalCount = 0
+  $startX = [Math]::Max(0, $Left)
+  $startY = [Math]::Max(0, $Top)
+  $endX = [Math]::Min($Bitmap.Width, $Right)
+  $endY = [Math]::Min($Bitmap.Height, $Bottom)
+
+  if ($endX -le $startX -or $endY -le $startY) {
+    return 0.0
+  }
+
+  for ($y = $startY; $y -lt $endY; $y += 3) {
+    for ($x = $startX; $x -lt $endX; $x += 3) {
+      $totalCount++
+      $color = $Bitmap.GetPixel($x, $y)
+      $brightness = ($color.R + $color.G + $color.B) / 3
+      if ($brightness -lt 65) {
+        $darkCount++
+      }
+    }
+  }
+
+  if ($totalCount -le 0) {
+    return 0.0
+  }
+
+  return ($darkCount / $totalCount)
+}
+
+function Test-BilibiliVideoPageVisual {
+  param(
+    [IntPtr]$Handle,
+    [System.Drawing.Rectangle]$Bounds
+  )
+
+  $now = [datetime]::UtcNow
+  $probeKey = "{0}:{1}:{2}:{3}:{4}" -f $Handle, $Bounds.Left, $Bounds.Top, $Bounds.Width, $Bounds.Height
+  if ($probeKey -eq $script:LastVideoPageVisualProbeKey -and (($now - $script:LastVideoPageVisualProbeAt).TotalMilliseconds -lt $VideoPageVisualProbeIntervalMilliseconds)) {
+    return $script:LastVideoPageVisualActive
+  }
+
+  $script:LastVideoPageVisualProbeKey = $probeKey
+  $script:LastVideoPageVisualProbeAt = $now
+  $script:LastVideoPageVisualActive = $false
+
+  if ($Bounds.Width -lt 720 -or $Bounds.Height -lt 360) {
+    return $false
+  }
+
+  $captureHeight = [Math]::Min(120, $Bounds.Height)
+  $bitmap = $null
+  $graphics = $null
+  try {
+    $bitmap = [System.Drawing.Bitmap]::new($Bounds.Width, $captureHeight)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.CopyFromScreen($Bounds.Left, $Bounds.Top, 0, 0, $bitmap.Size)
+
+    $sideWidth = [int][Math]::Min(420, [Math]::Max(260, $Bounds.Width * 0.24))
+    $rightPanelLeft = $Bounds.Width - $sideWidth
+
+    $topChromeDarkRatio = Get-BitmapDarkRatio -Bitmap $bitmap -Left 80 -Top 8 -Right ($Bounds.Width - 20) -Bottom 48
+    $playerStripDarkRatio = Get-BitmapDarkRatio -Bitmap $bitmap -Left 80 -Top 60 -Right $rightPanelLeft -Bottom 96
+    $rightTabDarkRatio = Get-BitmapDarkRatio -Bitmap $bitmap -Left $rightPanelLeft -Top 60 -Right ($Bounds.Width - 20) -Bottom 96
+
+    $script:LastVideoPageVisualActive = (
+      $rightTabDarkRatio -ge 0.80 -and
+      ($topChromeDarkRatio -ge 0.60 -or $playerStripDarkRatio -ge 0.40)
+    )
+    return $script:LastVideoPageVisualActive
+  } catch {
+    $script:LastVideoPageVisualActive = $false
+    return $false
+  } finally {
+    if ($null -ne $graphics) {
+      $graphics.Dispose()
+    }
+    if ($null -ne $bitmap) {
+      $bitmap.Dispose()
+    }
+  }
 }
 
 function Test-NonHomeLeftNavSelected {
@@ -736,17 +835,105 @@ function Test-HeaderSearchElement {
     $centerX -le $maxCenterX
   )
 }
+
+function Test-HeaderSearchVisualActive {
+  param(
+    [IntPtr]$Handle,
+    [System.Drawing.Rectangle]$WindowBounds
+  )
+
+  $now = [datetime]::UtcNow
+  $probeKey = "{0}:{1}:{2}:{3}:{4}" -f $Handle, $WindowBounds.Left, $WindowBounds.Top, $WindowBounds.Width, $WindowBounds.Height
+  if ($probeKey -eq $script:LastSearchVisualProbeKey -and (($now - $script:LastSearchVisualProbeAt).TotalMilliseconds -lt $SearchVisualProbeIntervalMilliseconds)) {
+    return $script:LastSearchVisualActive
+  }
+
+  $script:LastSearchVisualProbeKey = $probeKey
+  $script:LastSearchVisualProbeAt = $now
+  $script:LastSearchVisualActive = $false
+
+  $sampleLeft = $WindowBounds.Left + [int]($WindowBounds.Width * 0.28)
+  $sampleRight = $WindowBounds.Left + [int]($WindowBounds.Width * 0.84)
+  $sampleTop = $WindowBounds.Top + 8
+  $sampleBottom = $WindowBounds.Top + [Math]::Min(120, $WindowBounds.Height)
+  $sampleWidth = $sampleRight - $sampleLeft
+  $sampleHeight = $sampleBottom - $sampleTop
+
+  if ($sampleWidth -lt 220 -or $sampleHeight -lt 40) {
+    return $false
+  }
+
+  $bitmap = $null
+  $graphics = $null
+  try {
+    $bitmap = [System.Drawing.Bitmap]::new($sampleWidth, $sampleHeight)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.CopyFromScreen($sampleLeft, $sampleTop, 0, 0, $bitmap.Size)
+
+    $pinkCount = 0
+    $minX = $sampleWidth
+    $maxX = 0
+    $minY = $sampleHeight
+    $maxY = 0
+
+    for ($y = 0; $y -lt $sampleHeight; $y += 2) {
+      for ($x = 0; $x -lt $sampleWidth; $x += 2) {
+        $color = $bitmap.GetPixel($x, $y)
+        if (Test-BilibiliPinkPixel -Color $color) {
+          $pinkCount++
+          if ($x -lt $minX) { $minX = $x }
+          if ($x -gt $maxX) { $maxX = $x }
+          if ($y -lt $minY) { $minY = $y }
+          if ($y -gt $maxY) { $maxY = $y }
+        }
+      }
+    }
+
+    if ($pinkCount -lt 36) {
+      return $false
+    }
+
+    $spanX = $maxX - $minX
+    $spanY = $maxY - $minY
+    $script:LastSearchVisualActive = ($spanX -ge 140 -and $spanY -ge 18)
+    return $script:LastSearchVisualActive
+  } catch {
+    $script:LastSearchVisualActive = $false
+    return $false
+  } finally {
+    if ($null -ne $graphics) {
+      $graphics.Dispose()
+    }
+    if ($null -ne $bitmap) {
+      $bitmap.Dispose()
+    }
+  }
+}
+
 function Test-BilibiliSearchActive {
   param(
     [IntPtr]$Handle,
     [System.Drawing.Rectangle]$WindowBounds
   )
 
+  $now = [datetime]::UtcNow
+
+  if (Test-HeaderSearchVisualActive -Handle $Handle -WindowBounds $WindowBounds) {
+    $script:LastSearchActive = $true
+    $script:LastSearchActiveConfirmedAt = $now
+    return $true
+  }
+
   if (-not $script:CanUseAutomation) {
+    if (($now - $script:LastSearchActiveConfirmedAt).TotalMilliseconds -lt $SearchStateHoldMilliseconds) {
+      $script:LastSearchActive = $true
+      return $true
+    }
+
+    $script:LastSearchActive = $false
     return $false
   }
 
-  $now = [datetime]::UtcNow
   if ($Handle -eq $script:LastSearchProbeHandle -and (($now - $script:LastSearchProbeAt).TotalMilliseconds -lt 350)) {
     return $script:LastSearchActive
   }
@@ -1053,6 +1240,12 @@ function Update-Mask {
 
   if (Test-BilibiliSearchActive -Handle $target.Handle -WindowBounds $bounds) {
     Set-MaskVisible -Mask $mask -Visible $false
+    return
+  }
+
+  if ($target.Mode -eq "Home" -and (Test-BilibiliVideoPageVisual -Handle $target.Handle -Bounds $bounds)) {
+    Update-VideoRecommendMask -Handle $target.Handle -Bounds $bounds -Title $target.Title
+    $script:LastTargetHandle = $target.Handle
     return
   }
 

@@ -20,6 +20,11 @@
 - Fullscreen video, search results, personal/history pages, and user-requested content pages must not be masked. Home recommendations and video-page recommendation lists are the intended masking targets.
   中文：视频全屏、搜索结果、个人/历史页，以及用户主动进入的内容页不应遮挡。目标只应是首页推荐流和视频页推荐列表。
 
+- Search detection must have a visual fallback. The Bilibili Windows client may not expose its search box or query text through UI Automation, so an active/focused header search box should also be detected from its central pink focus border before showing any home mask.
+  中文：搜索检测必须有视觉兜底。B 站 Windows 客户端不一定通过 UI Automation 暴露搜索框或搜索词；显示首页遮罩前，也要通过顶部中间搜索框的粉色焦点边框识别搜索激活状态。
+
+- Generic Bilibili titles must be protected by a video-page visual check before applying the home mask. If the top chrome/player strip and right tab strip are dark like a video page, route to video-page handling or hide the mask; never apply the large white home mask over the player.
+  中文：泛 B 站标题在套首页遮罩前必须先做视频页视觉保护。如果顶部栏/播放器顶边和右侧标签栏呈视频页深色布局，就改走视频页逻辑或隐藏遮罩，绝不能把首页白色大遮罩盖到播放器上。
+
 - Prefer conservative failure behavior: if the tool cannot confidently identify the exact recommendation region, hide the mask instead of covering useful content.
   中文：失败时保守处理：如果无法确信推荐区域位置，宁可不遮挡，也不要盖住用户要看的内容。
-
